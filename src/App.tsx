@@ -1,19 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 
-type SectionKey =
-  | 'dashboard'
-  | 'analyze'
-  | 'chat'
-  | 'formation'
-  | 'players'
-  | 'builder'
-  | 'matches'
-  | 'profile';
+type SectionKey = 'dashboard' | 'analyze' | 'chat' | 'formation' | 'players' | 'builder' | 'matches' | 'profile';
 
-type ChatMessage = {
-  role: 'user' | 'assistant';
-  content: string;
-};
+type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
 type FormationOption = {
   name: string;
@@ -31,6 +20,7 @@ type Recommendation = {
   reason: string;
   chemistry: string;
   price?: string;
+  verified?: boolean;
 };
 
 type MatchRecord = {
@@ -50,6 +40,12 @@ type AnalysisReport = {
   tactics: string[];
   score: number;
   notes: string;
+};
+
+type ApiStatus = {
+  configured: boolean;
+  demoMode: boolean;
+  message?: string;
 };
 
 const navItems: { key: SectionKey; label: string }[] = [
@@ -126,7 +122,7 @@ const formations: FormationOption[] = [
     name: '3-5-2',
     description: 'Wing-back system that stretches the pitch and attacks the half spaces.',
     strengths: ['Superb width', 'Strong overloads', 'High pressing'],
-    weaknesses: [' Vulnerable to central counters', 'Needs disciplined wing-backs'],
+    weaknesses: ['Vulnerable to central counters', 'Needs disciplined wing-backs'],
     style: 'High pressing',
     positions: [
       { left: 18, top: 50, label: 'CB' },
@@ -143,84 +139,11 @@ const formations: FormationOption[] = [
   },
 ];
 
-const samplePlayers = [
-  'Hakimi',
-  'Ramos',
-  'Van Dijk',
-  'Kimmich',
-  'Pedri',
-  'De Bruyne',
-  'Salah',
-  'Lewandowski',
-  'Haaland',
-  'Aimar',
-  'Zubimendi',
-  'Tchouameni',
-  'Foden',
-  'Gakpo',
-  'Gimenez',
-  'Martinez',
-  'Guendouzi',
-  'Mubama',
-];
+const samplePlayers = ['Hakimi', 'Ramos', 'Van Dijk', 'Kimmich', 'Pedri', 'De Bruyne', 'Salah', 'Lewandowski', 'Haaland', 'Aimar', 'Zubimendi', 'Tchouameni', 'Foden', 'Gakpo', 'Gimenez', 'Martinez', 'Guendouzi', 'Mubama'];
 
-const recommendations: Recommendation[] = [
-  {
-    name: 'Victor Osimhen',
-    position: 'ST',
-    attribute: 'Finishing, acceleration, movement',
-    reason: 'Perfect for quick transition attacks and a direct line to goal.',
-    chemistry: 'High chemistry with pacy wide creators and high-tempo midfielders.',
-    price: 'Approx. 90K-125K',
-  },
-  {
-    name: 'Achraf Hakimi',
-    position: 'RB',
-    attribute: 'Pace, dribbling, recovery',
-    reason: 'Adds width to a 4-3-3 and helps with underlapping runs.',
-    chemistry: 'Strong fit in a balanced side with a central midfielder shield.',
-    price: 'Approx. 78K-103K',
-  },
-  {
-    name: 'Rodri',
-    position: 'CDM',
-    attribute: 'Passing, interceptions, composure',
-    reason: 'Improves midfield control and protects the back line against transitions.',
-    chemistry: 'Ideal for possession and compact 4-2-3-1 setups.',
-    price: 'Approx. 100K-150K',
-  },
-  {
-    name: 'Bukayo Saka',
-    position: 'RW',
-    attribute: 'Dribbling, tempo, final third creativity',
-    reason: 'Delivers direct threat and width when you want to attack the box.',
-    chemistry: 'Works best with a central striker and a creative playmaker behind him.',
-    price: 'Approx. 85K-110K',
-  },
-  {
-    name: 'Ruben Dias',
-    position: 'CB',
-    attribute: 'Aerial dominance, concentration, composure',
-    reason: 'Reduces defensive risk when your side is defending wide areas.',
-    chemistry: 'Strong partner for a pacy fullback or aggressive wing-back system.',
-    price: 'Approx. 70K-95K',
-  },
-];
+const defaultChat: ChatMessage[] = [{ role: 'assistant', content: 'Selamat datang, bos! Aku JEBAT. Upload squad kau atau tanya formasi, dan aku akan bantu susun taktikal dengan jelas.' }];
 
-const defaultChat: ChatMessage[] = [
-  {
-    role: 'assistant',
-    content:
-      'Selamat datang, bos! Aku JEBAT. Upload squad kau atau tanya formasi, dan aku akan bantu susun taktikal dengan jelas.',
-  },
-];
-
-const initialProfile = {
-  name: 'Aiman Rahman',
-  rank: 'Elite Coach',
-  preferredStyle: 'Balanced play',
-  language: 'BM',
-};
+const initialProfile = { name: 'Aiman Rahman', rank: 'Elite Coach', preferredStyle: 'Balanced play', language: 'BM' };
 
 const initialMatchHistory: MatchRecord[] = [
   { opponent: 'Haziq', score: '2-1', formation: '4-3-3', result: 'Win', notes: 'Good press and quick switches.' },
@@ -228,7 +151,7 @@ const initialMatchHistory: MatchRecord[] = [
   { opponent: 'Adib', score: '1-1', formation: '4-4-2', result: 'Draw', notes: 'Solid shape but lacked finishing.' },
 ];
 
-const getFormationsByStyle = (style: string) => {
+const getFormationListByStyle = (style: string) => {
   const lower = style.toLowerCase();
   if (lower.includes('counter')) return ['4-4-2', '4-3-3'];
   if (lower.includes('possession')) return ['4-2-3-1', '4-1-2-1-2'];
@@ -237,12 +160,27 @@ const getFormationsByStyle = (style: string) => {
   return ['4-3-3', '4-2-3-1', '4-4-2'];
 };
 
+async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
+  const baseUrl = import.meta.env.VITE_API_URL || '/api';
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({ message: 'Request failed' }));
+    throw new Error(errorBody.message || 'Request failed');
+  }
+
+  return response.json() as Promise<T>;
+}
+
 function App() {
   const [activeSection, setActiveSection] = useState<SectionKey>('dashboard');
-  const [profile, setProfile] = useState(initialProfile);
+  const [profile] = useState(initialProfile);
   const [selectedFormation, setSelectedFormation] = useState('4-3-3');
   const [teamStyle, setTeamStyle] = useState('Balanced play');
-  const [budget, setBudget] = useState(100000);
+  const [budget] = useState(100000);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(defaultChat);
   const [inputValue, setInputValue] = useState('');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -251,6 +189,11 @@ function App() {
   const [savedSquads, setSavedSquads] = useState<string[]>(['Main 4-3-3', 'Counter 4-4-2']);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [apiStatus, setApiStatus] = useState<ApiStatus>({ configured: false, demoMode: true });
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([
+    { name: 'Victor Osimhen', position: 'ST', attribute: 'Finishing, acceleration, movement', reason: 'Excellent for transition play.', chemistry: 'Strong fit with wide creators.', price: 'Approx. 90K-125K', verified: false },
+    { name: 'Achraf Hakimi', position: 'RB', attribute: 'Pace, dribbling, recovery', reason: 'Adds width and direct support.', chemistry: 'Good fit for balanced systems.', price: 'Approx. 78K-103K', verified: false },
+  ]);
 
   useEffect(() => {
     const saved = localStorage.getItem('jebat-squad');
@@ -258,6 +201,10 @@ function App() {
       const parsed = JSON.parse(saved) as { report: AnalysisReport };
       if (parsed.report) setAnalysisReport(parsed.report);
     }
+
+    fetchJson<{ configured: boolean; demoMode: boolean; message?: string }>('/health')
+      .then((data) => setApiStatus(data))
+      .catch(() => setApiStatus({ configured: false, demoMode: true, message: 'AI backend not yet configured.' }));
   }, []);
 
   useEffect(() => {
@@ -266,7 +213,7 @@ function App() {
     }
   }, [analysisReport]);
 
-  const recommendedFormationList = useMemo(() => getFormationsByStyle(teamStyle), [teamStyle]);
+  const recommendedFormationList = useMemo(() => getFormationListByStyle(teamStyle), [teamStyle]);
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -277,74 +224,79 @@ function App() {
     reader.readAsDataURL(file);
   };
 
-  const runAnalysis = () => {
-    const visiblePlayers = samplePlayers.slice(0, 8);
-    const score = Math.min(96, 74 + visiblePlayers.length);
-
-    const report: AnalysisReport = {
-      overall:
-        'Kekuatan utama squad ini adalah pressing tinggi, kadar pergerakan dan serangan dari sayap. Namun, anda masih perlu lebih kuat di ruang tengah dan menambah ketegasan di belakang jika mahu menahan counter attack yang pantas.',
-      strengths: [
-        'Kebolehan serangan mengecut dari sayap dan kombinasi akhir yang cepat.',
-        'Terdapat pemain dengan kadar intensiti tinggi untuk menekan tinggi.',
-        'Pembahagian tugas dalam midfield cukup jelas walaupun tidak sepenuhnya stabil.',
-      ],
-      weaknesses: [
-        'Sisi kanan dan kiri memerlukan sokongan lebih banyak untuk menutup ruang.',
-        'Pusat padang masih agak mudah dibebani jika lawan menekan pantas.',
-        'Cadangan upgrade putuskan game, terutama penyerang kedua yang lebih kuat di udara.',
-      ],
-      formation: selectedFormation,
-      upgrades: [
-        'Tambahkan pemain tengah bertahan yang kuat dalam pergerakan dan penyelesaian.',
-        'Dapatkan penyerang yang lebih berani di ruang depan jika mahu lebih banyak peluang.',
-        'Upgrade fullback yang lebih cekap ketika melindungi ruang dalam.',
-      ],
-      tactics: [
-        'Gunakan pressing yang dimulakan dari penyerang supaya pemain tengah tidak dipaksa ke belakang.',
-        'Pastikan ruang antara CB dan fullback sentiasa bercantum.',
-        'Jadikan salah satu winger menyerang dalam dan satu lagi menunggu ruang untuk counter.',
-      ],
-      score,
-      notes:
-        'Ini adalah penilaian AI secara umum, bukan rating rasmi EA SPORTS FC. Nilainya berdasarkan visual squad, formasi, keseimbangan dan kecenderungan taktikal yang kelihatan.',
-    };
-
-    setAnalysisReport(report);
-    setActiveSection('analyze');
+  const runAnalysis = async () => {
+    try {
+      const data = await fetchJson<AnalysisReport>('/squad/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ formation: selectedFormation, style: teamStyle, screenshot: imagePreview }),
+      });
+      setAnalysisReport(data);
+      setActiveSection('analyze');
+    } catch (error) {
+      const fallback: AnalysisReport = {
+        overall: 'Kekuatan utama squad ini ialah penyerang yang cepat dan pemain tengah yang boleh bantu menjaga keseimbangan. Namun, ruang antara barisan tengah dan belakang masih perlu lebih kukuh jika anda bermain menentang counter attack pantas.',
+        strengths: ['Pemain sayap agresif', 'Kebolehan menekan tinggi', 'Serangan terpantas dari ruang dalam'],
+        weaknesses: ['Ruang belakang boleh terdedah', 'Kreativiti tengah perlu lebih jelas', 'Kebutuhan upgrade penyerang kedua'],
+        formation: selectedFormation,
+        upgrades: ['Upgrade pemain tengah bertahan', 'Tambah penyerang yang kuat di ruang depan', 'Pastikan fullback menutup ruang dengan lebih baik'],
+        tactics: ['Mainkan pressing dari hadapan', 'Kawal lorong tengah ketika keluar dari pressing', 'Gunakan winger untuk menukar arah serangan'],
+        score: 84,
+        notes: 'Ini adalah laporan demo. Koneksi backend sebenar perlu dikonfigurasi untuk menggantikan output demo ini.',
+      };
+      setAnalysisReport(fallback);
+      setActiveSection('analyze');
+    }
   };
 
-  const handleChatSend = () => {
+  const handleChatSend = async () => {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
 
     const userMessage: ChatMessage = { role: 'user', content: trimmed };
-    const lower = trimmed.toLowerCase();
-
-    let answer =
-      'Bos, aktik utama ialah jaga ruang di belakang dan pastikan tiada longkang besar antara line. Aku boleh bantu susun taktikal ikut squad kau. Upload gambar pasukan dulu kalau mahu aku review secara lebih tepat.';
-
-    if (lower.includes('counter') || lower.includes('haziq')) {
-      answer =
-        'Kalau lawan suka counter attack, kita kena jaga ruang belakang. Cuba formasi yang ada dua pemain tengah bertahan dan pastikan fullback tidak naik terlalu tinggi. Aku boleh susun taktikal ikut squad kau. Upload gambar pasukan dulu supaya aku baca struktur sebenar.';
-    }
-
-    if (lower.includes('striker') || lower.includes('penyerang')) {
-      answer =
-        'Untuk striker, cari pemain yang kuat dalam ruang terhad, pecutan, dan finishing. Kalau squad kau ramai tengah, pilih striker yang ready untuk disorong kepada ruang depan dan boleh buka ruang untuk winger.';
-    }
-
-    if (lower.includes('budget') || lower.includes('100k') || lower.includes('100k')) {
-      answer =
-        'Dengan budget 100K, fokus pada dua atau tiga upgrade penting: pemain tengah bertahan, penyerang yang cepat atau winger yang membantu serangan. Jangan beli terlalu banyak pemain yang tidak jelas fungsi mereka dalam formasi.';
-    }
-
-    if (lower.includes('formation') || lower.includes('formasi')) {
-      answer = `Berdasarkan gaya ${teamStyle.toLowerCase()}, aku galakkan ${recommendedFormationList[0]} atau ${recommendedFormationList[1]}. Cari keseimbangan antara ruang di tengah dan kelajuan sayap.`;
-    }
-
-    setChatMessages((prev) => [...prev, userMessage, { role: 'assistant', content: answer }]);
+    setChatMessages((prev) => [...prev, userMessage]);
     setInputValue('');
+
+    try {
+      const payload = await fetchJson<{ message: string } | { error: string; needsKeys?: boolean }>('/chat', {
+        method: 'POST',
+        body: JSON.stringify({ message: trimmed, language: 'ms', style: teamStyle }),
+      });
+
+      if ('error' in payload) {
+        setChatMessages((prev) => [...prev, { role: 'assistant', content: payload.error }]);
+        return;
+      }
+
+      setChatMessages((prev) => [...prev, { role: 'assistant', content: payload.message }]);
+    } catch (error) {
+      setChatMessages((prev) => [...prev, { role: 'assistant', content: 'Bos, backend AI belum dikonfigurasi. Setiap jawapan akan kekal dalam mod demo sehingga API key ditambah.' }]);
+    }
+  };
+
+  const handleFormationFetch = async () => {
+    try {
+      const data = await fetchJson<{ formation: string; reason: string }[]>('/formation/recommend', {
+        method: 'POST',
+        body: JSON.stringify({ style: teamStyle }),
+      });
+      if (data[0]) {
+        setSelectedFormation(data[0].formation);
+      }
+    } catch {
+      setSelectedFormation(recommendedFormationList[0]);
+    }
+  };
+
+  const handlePlayerSuggestions = async () => {
+    try {
+      const data = await fetchJson<Recommendation[]>('/player/recommend', {
+        method: 'POST',
+        body: JSON.stringify({ budget, style: teamStyle, formation: selectedFormation }),
+      });
+      if (data.length) setRecommendations(data);
+    } catch {
+      setRecommendations((prev) => prev);
+    }
   };
 
   const handleAddMatch = () => {
@@ -406,35 +358,23 @@ function App() {
                   Selamat datang, bos! Aku JEBAT, jurulatih AI peribadi kau. Upload squad, tanya formasi atau cari pemain terbaik. Jom kita bina pasukan yang susah dikalahkan!
                 </p>
                 <div className="mt-6 flex flex-wrap gap-3">
-                  <button className="rounded-full bg-[#A3FF69] px-5 py-3 font-black text-[#071B13] shadow-neon">
-                    Upload Squad
-                  </button>
-                  <button className="rounded-full border border-white/15 bg-white/5 px-5 py-3 font-semibold text-white">
-                    Explore Features
-                  </button>
+                  <button className="rounded-full bg-[#A3FF69] px-5 py-3 font-black text-[#071B13] shadow-neon">Upload Squad</button>
+                  <button className="rounded-full border border-white/15 bg-white/5 px-5 py-3 font-semibold text-white">Explore Features</button>
                 </div>
               </div>
 
               <div className="rounded-[24px] border border-greenGlow/25 bg-[#0d2a1d]/80 p-5">
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="text-lg font-bold">{authMode === 'login' ? 'Masuk ke JEBAT' : 'Daftar akaun baru'}</h3>
-                  <button
-                    className="text-xs uppercase tracking-[0.2em] text-greenGlow"
-                    onClick={() => setAuthMode((prev) => (prev === 'login' ? 'register' : 'login'))}
-                  >
+                  <button className="text-xs uppercase tracking-[0.2em] text-greenGlow" onClick={() => setAuthMode((prev) => (prev === 'login' ? 'register' : 'login'))}>
                     {authMode === 'login' ? 'Register' : 'Login'}
                   </button>
                 </div>
                 <div className="space-y-3">
                   <input className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 outline-none" placeholder="Email" />
                   <input className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 outline-none" placeholder="Password" type="password" />
-                  {authMode === 'register' && (
-                    <input className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 outline-none" placeholder="Nama penuh" />
-                  )}
-                  <button
-                    className="w-full rounded-xl bg-[#A3FF69] px-4 py-3 font-black text-[#071B13]"
-                    onClick={() => setIsLoggedIn(true)}
-                  >
+                  {authMode === 'register' && <input className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 outline-none" placeholder="Nama penuh" />}
+                  <button className="w-full rounded-xl bg-[#A3FF69] px-4 py-3 font-black text-[#071B13]" onClick={() => setIsLoggedIn(true)}>
                     {authMode === 'login' ? 'Masuk' : 'Daftar'}
                   </button>
                 </div>
@@ -448,16 +388,18 @@ function App() {
             <button
               key={item.key}
               onClick={() => setActiveSection(item.key)}
-              className={`rounded-full px-4 py-2 text-[12px] font-semibold transition ${
-                activeSection === item.key
-                  ? 'bg-[#A3FF69] text-[#071B13] shadow-neon'
-                  : 'border border-white/10 bg-white/5 text-white/80'
-              }`}
+              className={`rounded-full px-4 py-2 text-[12px] font-semibold transition ${activeSection === item.key ? 'bg-[#A3FF69] text-[#071B13] shadow-neon' : 'border border-white/10 bg-white/5 text-white/80'}`}
             >
               {item.label}
             </button>
           ))}
         </nav>
+
+        {apiStatus && !apiStatus.configured && (
+          <div className="mb-5 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
+            {apiStatus.message || 'AI backend belum dikonfigurasi. Ini ialah mod demo dan bukan output rasmi.'}
+          </div>
+        )}
 
         {activeSection === 'dashboard' && (
           <section className="grid gap-5 lg:grid-cols-3">
@@ -484,9 +426,7 @@ function App() {
               <div className="mt-6">
                 <h3 className="text-xl font-bold">Recommended direction</h3>
                 <div className="mt-3 rounded-2xl border border-greenGlow/25 bg-[#133a28]/70 p-4 text-sm text-white/80">
-                  <p>
-                    {analysisReport?.overall ?? 'Gunakan formasi 4-3-3 untuk keseimbangan serangan dan pertahanan. Pastikan winger memegang lebar dan satu pemain tengah bertahan sentiasa menutup ruang.'}
-                  </p>
+                  <p>{analysisReport?.overall ?? 'Gunakan formasi 4-3-3 untuk keseimbangan serangan dan pertahanan. Pastikan winger memegang lebar dan satu pemain tengah bertahan sentiasa menutup ruang.'}</p>
                 </div>
               </div>
             </div>
@@ -494,15 +434,9 @@ function App() {
             <div className="glass-panel rounded-[28px] p-5">
               <p className="text-xs uppercase tracking-[0.3em] text-greenGlow">Quick actions</p>
               <div className="mt-4 space-y-3">
-                <button onClick={() => setActiveSection('analyze')} className="w-full rounded-2xl bg-[#A3FF69] px-4 py-3 font-black text-[#071B13]">
-                  Analyze My Squad
-                </button>
-                <button onClick={() => setActiveSection('chat')} className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-semibold text-white">
-                  Open JEBAT Coach
-                </button>
-                <button onClick={() => setActiveSection('formation')} className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-semibold text-white">
-                  Formation Advisor
-                </button>
+                <button onClick={() => setActiveSection('analyze')} className="w-full rounded-2xl bg-[#A3FF69] px-4 py-3 font-black text-[#071B13]">Analyze My Squad</button>
+                <button onClick={() => setActiveSection('chat')} className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-semibold text-white">Open JEBAT Coach</button>
+                <button onClick={() => setActiveSection('formation')} className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-semibold text-white">Formation Advisor</button>
               </div>
             </div>
           </section>
@@ -521,12 +455,8 @@ function App() {
               </div>
 
               <div className="mt-4 flex gap-3">
-                <button className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 font-semibold">
-                  Camera capture
-                </button>
-                <button onClick={runAnalysis} className="flex-1 rounded-xl bg-[#A3FF69] px-4 py-3 font-black text-[#071B13]">
-                  Analyze now
-                </button>
+                <button className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 font-semibold">Camera capture</button>
+                <button onClick={runAnalysis} className="flex-1 rounded-xl bg-[#A3FF69] px-4 py-3 font-black text-[#071B13]">Analyze now</button>
               </div>
 
               {imagePreview && (
@@ -539,9 +469,7 @@ function App() {
             <div className="glass-panel rounded-[28px] p-5 sm:p-6">
               <div className="flex items-center justify-between gap-4">
                 <p className="text-xs uppercase tracking-[0.3em] text-greenGlow">JEBAT AI SQUAD REPORT</p>
-                <span className="rounded-full border border-greenGlow/25 bg-greenGlow/10 px-3 py-1 text-xs font-bold text-greenGlow">
-                  AI assessment
-                </span>
+                <span className="rounded-full border border-greenGlow/25 bg-greenGlow/10 px-3 py-1 text-xs font-bold text-greenGlow">AI assessment</span>
               </div>
 
               {analysisReport ? (
@@ -554,15 +482,11 @@ function App() {
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                       <p className="text-sm text-white/60">Strengths</p>
-                      <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-white/80">
-                        {analysisReport.strengths.map((item) => <li key={item}>{item}</li>)}
-                      </ul>
+                      <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-white/80">{analysisReport.strengths.map((item) => <li key={item}>{item}</li>)}</ul>
                     </div>
                     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                       <p className="text-sm text-white/60">Weaknesses</p>
-                      <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-white/80">
-                        {analysisReport.weaknesses.map((item) => <li key={item}>{item}</li>)}
-                      </ul>
+                      <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-white/80">{analysisReport.weaknesses.map((item) => <li key={item}>{item}</li>)}</ul>
                     </div>
                   </div>
 
@@ -579,24 +503,18 @@ function App() {
 
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                     <p className="text-sm text-white/60">Suggested upgrades</p>
-                    <ul className="mt-3 space-y-2 text-sm text-white/80">
-                      {analysisReport.upgrades.map((item) => <li key={item}>• {item}</li>)}
-                    </ul>
+                    <ul className="mt-3 space-y-2 text-sm text-white/80">{analysisReport.upgrades.map((item) => <li key={item}>• {item}</li>)}</ul>
                   </div>
 
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                     <p className="text-sm text-white/60">Tactical improvements</p>
-                    <ul className="mt-3 space-y-2 text-sm text-white/80">
-                      {analysisReport.tactics.map((item) => <li key={item}>• {item}</li>)}
-                    </ul>
+                    <ul className="mt-3 space-y-2 text-sm text-white/80">{analysisReport.tactics.map((item) => <li key={item}>• {item}</li>)}</ul>
                   </div>
 
                   <p className="text-xs text-white/60">{analysisReport.notes}</p>
                 </div>
               ) : (
-                <div className="mt-6 rounded-2xl border border-dashed border-white/15 bg-black/10 p-10 text-center text-white/60">
-                  Upload screenshot and klik Analyze now untuk dapatkan laporan JEBAT.
-                </div>
+                <div className="mt-6 rounded-2xl border border-dashed border-white/15 bg-black/10 p-10 text-center text-white/60">Upload screenshot and klik Analyze now untuk dapatkan laporan JEBAT.</div>
               )}
             </div>
           </section>
@@ -609,39 +527,20 @@ function App() {
                 <p className="text-xs uppercase tracking-[0.3em] text-greenGlow">JEBAT AI Chat</p>
                 <h3 className="mt-2 text-2xl font-black">Coach conversation</h3>
               </div>
-              <div className="rounded-full border border-greenGlow/20 bg-greenGlow/10 px-3 py-1 text-xs text-greenGlow">
-                Bahasa Melayu / English
-              </div>
+              <div className="rounded-full border border-greenGlow/20 bg-greenGlow/10 px-3 py-1 text-xs text-greenGlow">Bahasa Melayu / English</div>
             </div>
 
             <div className="chat-scroll max-h-[480px] space-y-3 overflow-y-auto rounded-[22px] border border-white/10 bg-black/15 p-4">
               {chatMessages.map((message, index) => (
-                <div
-                  key={`${message.role}-${index}`}
-                  className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${
-                    message.role === 'assistant'
-                      ? 'bg-[#0f2a20] text-white'
-                      : 'ml-auto bg-[#A3FF69] text-[#071B13]'
-                  }`}
-                >
+                <div key={`${message.role}-${index}`} className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${message.role === 'assistant' ? 'bg-[#0f2a20] text-white' : 'ml-auto bg-[#A3FF69] text-[#071B13]'}`}>
                   {message.content}
                 </div>
               ))}
             </div>
 
             <div className="mt-4 flex gap-3">
-              <input
-                value={inputValue}
-                onChange={(event) => setInputValue(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') handleChatSend();
-                }}
-                className="flex-1 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none"
-                placeholder="Tanya JEBAT, contoh: JEBAT, aku selalu kalah dengan Haziq..."
-              />
-              <button onClick={handleChatSend} className="rounded-2xl bg-[#A3FF69] px-5 py-3 font-black text-[#071B13]">
-                Send
-              </button>
+              <input value={inputValue} onChange={(event) => setInputValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void handleChatSend(); }} className="flex-1 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none" placeholder="Tanya JEBAT, contoh: JEBAT, aku selalu kalah dengan Haziq..." />
+              <button onClick={() => void handleChatSend()} className="rounded-2xl bg-[#A3FF69] px-5 py-3 font-black text-[#071B13]">Send</button>
             </div>
           </section>
         )}
@@ -662,9 +561,7 @@ function App() {
 
                 <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
                   <p className="text-sm text-white/60">JEBAT recommendation</p>
-                  <p className="mt-2 text-lg font-bold text-[#A3FF69]">
-                    {recommendedFormationList[0]} or {recommendedFormationList[1]}
-                  </p>
+                  <p className="mt-2 text-lg font-bold text-[#A3FF69]">{recommendedFormationList[0]} or {recommendedFormationList[1]}</p>
                   <p className="mt-2 text-sm text-white/75">
                     {teamStyle === 'Counter attack' && 'Buat ruang untuk pemain cepat dan pastikan pemain tengah menutup lorong tengah.'}
                     {teamStyle === 'Possession play' && 'Gunakan permainan centric dan pilih dua midfielders yang boleh menerima bola di bawah tekanan.'}
@@ -672,6 +569,7 @@ function App() {
                     {teamStyle === 'Wing play' && 'Minta fullback menampung lewat kedalaman dan gunakan winger untuk cutback.'}
                     {teamStyle === 'Balanced play' && 'Gunakan struktur 4-3-3 dengan ruang dalam yang seimbang dan ruang yang dimanage dengan baik.'}
                   </p>
+                  <button onClick={() => void handleFormationFetch()} className="mt-4 rounded-full border border-greenGlow/20 bg-greenGlow/10 px-4 py-2 text-xs font-bold text-greenGlow">Refresh AI recommendation</button>
                 </div>
               </div>
             </div>
@@ -679,9 +577,7 @@ function App() {
             <div className="glass-panel rounded-[28px] p-5 sm:p-6">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-xl font-black">Visual pitch</h3>
-                <button className="rounded-full border border-greenGlow/20 bg-greenGlow/10 px-3 py-1 text-xs font-semibold text-greenGlow">
-                  {selectedFormation}
-                </button>
+                <button className="rounded-full border border-greenGlow/20 bg-greenGlow/10 px-3 py-1 text-xs font-semibold text-greenGlow">{selectedFormation}</button>
               </div>
 
               <div className="pitch-visual h-[430px] p-4">
@@ -690,39 +586,25 @@ function App() {
                 <div className="field-line absolute left-0 top-1/2 h-[200px] w-[200px] -translate-y-1/2 rounded-full border"></div>
                 <div className="field-line absolute right-0 top-1/2 h-[200px] w-[200px] -translate-y-1/2 rounded-full border"></div>
 
-                {formations
-                  .filter((formation) => formation.name === selectedFormation)
-                  .map((formation) =>
-                    formation.positions.map((position) => (
-                      <div
-                        key={`${formation.name}-${position.label}`}
-                        className="player-node"
-                        style={{ left: `${position.left}%`, top: `${position.top}%` }}
-                      >
-                        {position.label}
-                      </div>
-                    )),
-                  )}
+                {formations.filter((formation) => formation.name === selectedFormation).map((formation) =>
+                  formation.positions.map((position) => (
+                    <div key={`${formation.name}-${position.label}`} className="player-node" style={{ left: `${position.left}%`, top: `${position.top}%` }}>{position.label}</div>
+                  ))
+                )}
               </div>
 
-              {formations
-                .filter((formation) => formation.name === selectedFormation)
-                .map((formation) => (
-                  <div key={formation.name} className="mt-5 grid gap-4 md:grid-cols-2">
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <p className="text-sm text-white/60">Strengths</p>
-                      <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-white/80">
-                        {formation.strengths.map((item) => <li key={item}>{item}</li>)}
-                      </ul>
-                    </div>
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <p className="text-sm text-white/60">Weaknesses</p>
-                      <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-white/80">
-                        {formation.weaknesses.map((item) => <li key={item}>{item}</li>)}
-                      </ul>
-                    </div>
+              {formations.filter((formation) => formation.name === selectedFormation).map((formation) => (
+                <div key={formation.name} className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <p className="text-sm text-white/60">Strengths</p>
+                    <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-white/80">{formation.strengths.map((item) => <li key={item}>{item}</li>)}</ul>
                   </div>
-                ))}
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <p className="text-sm text-white/60">Weaknesses</p>
+                    <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-white/80">{formation.weaknesses.map((item) => <li key={item}>{item}</li>)}</ul>
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
         )}
@@ -734,10 +616,10 @@ function App() {
                 <p className="text-xs uppercase tracking-[0.3em] text-greenGlow">AI Player Recommendation</p>
                 <h3 className="mt-2 text-2xl font-black">Best picks for your squad</h3>
               </div>
-              <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80">
-                Budget: <span className="font-bold text-greenGlow">{budget.toLocaleString()} coins</span>
-              </div>
+              <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80">Budget: <span className="font-bold text-greenGlow">{budget.toLocaleString()} coins</span></div>
             </div>
+
+            <button onClick={() => void handlePlayerSuggestions()} className="mt-4 rounded-full border border-greenGlow/20 bg-greenGlow/10 px-4 py-2 text-xs font-bold text-greenGlow">Refresh player suggestions</button>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {recommendations.map((player) => (
@@ -747,20 +629,13 @@ function App() {
                       <h4 className="text-lg font-black">{player.name}</h4>
                       <p className="text-sm text-white/60">{player.position}</p>
                     </div>
-                    <span className="rounded-full bg-greenGlow/10 px-2 py-1 text-[10px] font-bold text-greenGlow">
-                      {player.price ?? 'Price needs verification'}
-                    </span>
+                    <span className="rounded-full bg-greenGlow/10 px-2 py-1 text-[10px] font-bold text-greenGlow">{player.price ?? 'Price requires verification'}</span>
                   </div>
 
-                  <p className="mt-3 text-sm text-white/70">
-                    <span className="font-semibold text-white">Attributes:</span> {player.attribute}
-                  </p>
-                  <p className="mt-2 text-sm text-white/70">
-                    <span className="font-semibold text-white">Reason:</span> {player.reason}
-                  </p>
-                  <p className="mt-2 text-sm text-white/70">
-                    <span className="font-semibold text-white">Chemistry:</span> {player.chemistry}
-                  </p>
+                  <p className="mt-3 text-sm text-white/70"><span className="font-semibold text-white">Attributes:</span> {player.attribute}</p>
+                  <p className="mt-2 text-sm text-white/70"><span className="font-semibold text-white">Reason:</span> {player.reason}</p>
+                  <p className="mt-2 text-sm text-white/70"><span className="font-semibold text-white">Chemistry:</span> {player.chemistry}</p>
+                  <p className="mt-2 text-xs text-white/50">{player.verified ? 'Verified card data available.' : 'Price and card details require verification before being treated as live market data.'}</p>
                 </div>
               ))}
             </div>
@@ -773,25 +648,19 @@ function App() {
               <p className="text-xs uppercase tracking-[0.3em] text-greenGlow">AI Squad Builder</p>
               <div className="mt-4 space-y-4">
                 <select value={selectedFormation} onChange={(event) => setSelectedFormation(event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 outline-none">
-                  {formations.map((formation) => (
-                    <option key={formation.name}>{formation.name}</option>
-                  ))}
+                  {formations.map((formation) => <option key={formation.name}>{formation.name}</option>)}
                 </select>
 
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                   <p className="text-sm text-white/60">Available squad spots</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {samplePlayers.slice(0, 8).map((player) => (
-                      <button key={player} className="rounded-full border border-greenGlow/25 bg-greenGlow/10 px-3 py-1 text-xs text-greenGlow">
-                        {player}
-                      </button>
+                      <button key={player} className="rounded-full border border-greenGlow/25 bg-greenGlow/10 px-3 py-1 text-xs text-greenGlow">{player}</button>
                     ))}
                   </div>
                 </div>
 
-                <button onClick={handleSaveSquad} className="w-full rounded-xl bg-[#A3FF69] px-4 py-3 font-black text-[#071B13]">
-                  Save squad version
-                </button>
+                <button onClick={handleSaveSquad} className="w-full rounded-xl bg-[#A3FF69] px-4 py-3 font-black text-[#071B13]">Save squad version</button>
               </div>
             </div>
 
@@ -800,19 +669,13 @@ function App() {
                 <div className="field-line absolute left-1/2 top-0 h-full w-[2px] -translate-x-1/2 border-l"></div>
                 <div className="field-line absolute left-1/2 top-1/2 h-[200px] w-[200px] -translate-x-1/2 -translate-y-1/2 rounded-full border"></div>
 
-                {formations
-                  .filter((formation) => formation.name === selectedFormation)
-                  .map((formation) =>
-                    formation.positions.map((position, index) => (
-                      <div
-                        key={`${formation.name}-${position.label}`}
-                        className="player-node"
-                        style={{ left: `${position.left}%`, top: `${position.top}%` }}
-                      >
-                        {samplePlayers[index % samplePlayers.length].slice(0, 2).toUpperCase()}
-                      </div>
-                    )),
-                  )}
+                {formations.filter((formation) => formation.name === selectedFormation).map((formation) =>
+                  formation.positions.map((position, index) => (
+                    <div key={`${formation.name}-${position.label}`} className="player-node" style={{ left: `${position.left}%`, top: `${position.top}%` }}>
+                      {samplePlayers[index % samplePlayers.length].slice(0, 2).toUpperCase()}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </section>
@@ -829,18 +692,14 @@ function App() {
                   {formations.map((formation) => <option key={formation.name}>{formation.name}</option>)}
                 </select>
                 <textarea className="min-h-[110px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 outline-none" placeholder="Notes about opponent tactics" />
-                <button onClick={handleAddMatch} className="w-full rounded-xl bg-[#A3FF69] px-4 py-3 font-black text-[#071B13]">
-                  Save match result
-                </button>
+                <button onClick={handleAddMatch} className="w-full rounded-xl bg-[#A3FF69] px-4 py-3 font-black text-[#071B13]">Save match result</button>
               </div>
             </div>
 
             <div className="glass-panel rounded-[28px] p-5 sm:p-6">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-xl font-black">Performance trends</h3>
-                <span className="rounded-full border border-greenGlow/20 bg-greenGlow/10 px-3 py-1 text-[10px] font-bold text-greenGlow">
-                  Head-to-head tracker
-                </span>
+                <span className="rounded-full border border-greenGlow/20 bg-greenGlow/10 px-3 py-1 text-[10px] font-bold text-greenGlow">Head-to-head tracker</span>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
@@ -863,19 +722,11 @@ function App() {
                   <div key={`${match.opponent}-${match.score}`} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-bold">{match.opponent}</p>
-                      <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${
-                        match.result === 'Win'
-                          ? 'bg-greenGlow/10 text-greenGlow'
-                          : match.result === 'Draw'
-                            ? 'bg-gold/10 text-gold'
-                            : 'bg-red-500/10 text-red-300'
-                      }`}>
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${match.result === 'Win' ? 'bg-greenGlow/10 text-greenGlow' : match.result === 'Draw' ? 'bg-gold/10 text-gold' : 'bg-red-500/10 text-red-300'}`}>
                         {match.result}
                       </span>
                     </div>
-                    <p className="mt-2 text-sm text-white/70">
-                      Score: {match.score} • Formation: {match.formation}
-                    </p>
+                    <p className="mt-2 text-sm text-white/70">Score: {match.score} • Formation: {match.formation}</p>
                     <p className="mt-2 text-sm text-white/60">{match.notes}</p>
                   </div>
                 ))}
@@ -890,9 +741,7 @@ function App() {
               <p className="text-xs uppercase tracking-[0.3em] text-greenGlow">My Profile</p>
               <div className="mt-5 rounded-[22px] border border-white/10 bg-[#0f2b23] p-5">
                 <div className="flex items-center gap-4">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#A3FF69] text-lg font-black text-[#071B13]">
-                    {profile.name.slice(0, 1)}
-                  </div>
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#A3FF69] text-lg font-black text-[#071B13]">{profile.name.slice(0, 1)}</div>
                   <div>
                     <h3 className="text-xl font-black">{profile.name}</h3>
                     <p className="text-sm text-white/70">{profile.rank}</p>
@@ -930,11 +779,7 @@ function App() {
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#081d16]/90 px-4 py-3 backdrop-blur-md sm:hidden">
         <div className="mx-auto flex max-w-md justify-between gap-2 text-[11px] text-white/80">
           {navItems.slice(0, 4).map((item) => (
-            <button
-              key={item.key}
-              onClick={() => setActiveSection(item.key)}
-              className={`flex-1 rounded-xl px-2 py-3 ${activeSection === item.key ? 'bg-[#A3FF69] text-[#071B13]' : 'bg-white/5'}`}
-            >
+            <button key={item.key} onClick={() => setActiveSection(item.key)} className={`flex-1 rounded-xl px-2 py-3 ${activeSection === item.key ? 'bg-[#A3FF69] text-[#071B13]' : 'bg-white/5'}`}>
               {item.label}
             </button>
           ))}
