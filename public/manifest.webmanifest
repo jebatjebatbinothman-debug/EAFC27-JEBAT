@@ -1,0 +1,13 @@
+{
+  "name": "EAFC27 JEBAT",
+  "short_name": "JEBAT",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#071B13",
+  "theme_color": "#071B13",
+  "description": "AI football coach, squad analyzer and tactical planner.",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
